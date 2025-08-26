@@ -1,0 +1,71 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Users\\vishw\\Product\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{16EF6617-E411-6B44-7490-02585CED31BD}|Assembly-CSharp.csproj|c:\\users\\vishw\\product\\assets\\scripts\\utilities\\gridsettings.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{16EF6617-E411-6B44-7490-02585CED31BD}|Assembly-CSharp.csproj|solutionrelative:assets\\scripts\\utilities\\gridsettings.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{16EF6617-E411-6B44-7490-02585CED31BD}|Assembly-CSharp.csproj|c:\\users\\vishw\\product\\assets\\scripts\\managers\\tilepooler.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{16EF6617-E411-6B44-7490-02585CED31BD}|Assembly-CSharp.csproj|solutionrelative:assets\\scripts\\managers\\tilepooler.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{16EF6617-E411-6B44-7490-02585CED31BD}|Assembly-CSharp.csproj|c:\\users\\vishw\\product\\assets\\scripts\\managers\\gridmanager.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{16EF6617-E411-6B44-7490-02585CED31BD}|Assembly-CSharp.csproj|solutionrelative:assets\\scripts\\managers\\gridmanager.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 0,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "GridSettings.cs",
+              "DocumentMoniker": "C:\\Users\\vishw\\Product\\Assets\\Scripts\\Utilities\\GridSettings.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\Utilities\\GridSettings.cs",
+              "ToolTip": "C:\\Users\\vishw\\Product\\Assets\\Scripts\\Utilities\\GridSettings.cs",
+              "RelativeToolTip": "Assets\\Scripts\\Utilities\\GridSettings.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAwAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-07-24T20:57:46.25Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "TilePooler.cs",
+              "DocumentMoniker": "C:\\Users\\vishw\\Product\\Assets\\Scripts\\Managers\\TilePooler.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\Managers\\TilePooler.cs",
+              "ToolTip": "C:\\Users\\vishw\\Product\\Assets\\Scripts\\Managers\\TilePooler.cs",
+              "RelativeToolTip": "Assets\\Scripts\\Managers\\TilePooler.cs",
+              "ViewState": "AgIAAAoAAAAAAAAAAAAowB8AAAANAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-07-24T20:56:29.854Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "GridManager.cs",
+              "DocumentMoniker": "C:\\Users\\vishw\\Product\\Assets\\Scripts\\Managers\\GridManager.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\Managers\\GridManager.cs",
+              "ToolTip": "C:\\Users\\vishw\\Product\\Assets\\Scripts\\Managers\\GridManager.cs",
+              "RelativeToolTip": "Assets\\Scripts\\Managers\\GridManager.cs",
+              "ViewState": "AgIAABsAAAAAAAAAAAA1wD4AAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-07-24T20:55:01.373Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
