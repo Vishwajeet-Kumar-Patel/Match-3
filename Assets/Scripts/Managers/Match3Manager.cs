@@ -2,8 +2,6 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-
-
 public class Match3Manager : MonoBehaviour
 {
     public static Match3Manager Instance;
@@ -13,8 +11,22 @@ public class Match3Manager : MonoBehaviour
     public GridSettings gridSettings;
 
     [Header("Prefabs & References")]
+    [Tooltip("Gem prefab (must have SpriteRenderer and Tile script).")]
     public GameObject tilePrefab;
+    [Tooltip("Parent transform for all gem tiles. Board will be centered on this transform.")]
     public Transform gridParent;
+
+    [Header("Per-cell Background (Dark Plate Behind Gems)")]
+    [Tooltip("Flat dark square prefab with SpriteRenderer. Renders behind gems, in front of scenic background.")]
+    public GameObject tileBackgroundPrefab;
+    [Tooltip("Optional parent for dark plates. If null, plates will be parented to gridParent.")]
+    public Transform backgroundParent;
+    [Tooltip("Sorting layer used for both plates and gems.")]
+    public string gameplaySortingLayer = "gameplay";
+    [Tooltip("Order for per-cell plates (behind gems).")]
+    public int bgOrderInLayer = 0;
+    [Tooltip("Order for gems (above plates).")]
+    public int gemOrderInLayer = 10;
 
     [Header("Runtime Grid Info")]
     public int rows = 8;
@@ -23,33 +35,46 @@ public class Match3Manager : MonoBehaviour
     public Sprite[] tileSprites;
 
     [Header("Game Settings")]
+    [Tooltip("Distance between adjacent cells in world units. Also used as cell size.")]
     public float tileSpacing = 1f;
     public float fallSpeed = 10f;
     public float swapSpeed = 8f;
+
+    [Header("Visual Tuning")]
+    [Range(0.6f, 1f)] public float tileFillPercent = 0.9f;   // how much of the cell the gem fills
+    [Range(0.8f, 1.05f)] public float backgroundFillPercent = 1.0f; // how much of the cell the plate fills
 
     [Header("Score")]
     public int score = 0;
     public int comboMultiplier = 1;
 
+    // ---- internals ----
     private Tile[,] grid;
     private Tile selectedTile;
     private Tile targetTile;
     private bool isProcessing = false;
 
+    // layout cache
+    private Vector3 gridOrigin; // top-left cell center
+    private float gemScale = 1f;
+    private float plateScale = 1f;
+
     void Awake()
     {
-        if (Instance == null)
-            Instance = this;
-        else
-            Destroy(gameObject);
+        if (Instance == null) Instance = this;
+        else Destroy(gameObject);
     }
 
     void Start()
     {
         LoadGridSettings();
+        ComputeLayout();
         GenerateInitialGrid();
     }
 
+    // --------------------------------------------------
+    // Layout / sizing
+    // --------------------------------------------------
     void LoadGridSettings()
     {
         if (useScriptableSettings && gridSettings != null)
@@ -59,19 +84,74 @@ public class Match3Manager : MonoBehaviour
             tileTypeCount = gridSettings.tileTypeCount;
             tileSprites = gridSettings.tileSprites;
         }
-
         grid = new Tile[rows, columns];
     }
 
+    void ComputeLayout()
+    {
+        if (gridParent == null)
+        {
+            var go = new GameObject("GridParent");
+            gridParent = go.transform;
+            gridParent.position = Vector3.zero;
+            Debug.LogWarning("[Match3] gridParent not assigned; created one at world origin.");
+        }
+
+        if (backgroundParent == null)
+            backgroundParent = gridParent;
+
+        // Center the grid around gridParent.position
+        float width  = (columns - 1) * tileSpacing;
+        float height = (rows    - 1) * tileSpacing;
+        gridOrigin = gridParent.position + new Vector3(-width * 0.5f, height * 0.5f, 0f);
+
+        // Compute instance scales from sprite bounds so things fit nicely per cell
+        if (tilePrefab != null)
+        {
+            var sr = tilePrefab.GetComponent<SpriteRenderer>();
+            if (sr && sr.sprite)
+            {
+                float maxSide = Mathf.Max(sr.sprite.bounds.size.x, sr.sprite.bounds.size.y);
+                if (maxSide > 0f)
+                    gemScale = (tileSpacing * tileFillPercent) / maxSide;
+            }
+        }
+
+        if (tileBackgroundPrefab != null)
+        {
+            var bs = tileBackgroundPrefab.GetComponent<SpriteRenderer>();
+            if (bs && bs.sprite)
+            {
+                float maxSide = Mathf.Max(bs.sprite.bounds.size.x, bs.sprite.bounds.size.y);
+                if (maxSide > 0f)
+                    plateScale = (tileSpacing * backgroundFillPercent) / maxSide;
+            }
+        }
+    }
+
+    Vector3 GridToWorld(int row, int col)
+    {
+        // rows grow downward
+        float x = gridOrigin.x + col * tileSpacing;
+        float y = gridOrigin.y - row * tileSpacing;
+        return new Vector3(x, y, 0f);
+    }
+
+    // --------------------------------------------------
+    // Grid creation
+    // --------------------------------------------------
     void GenerateInitialGrid()
     {
         // Clear old tiles if any
+        if (backgroundParent != null)
+        {
+            for (int i = backgroundParent.childCount - 1; i >= 0; i--)
+                DestroyImmediate(backgroundParent.GetChild(i).gameObject);
+        }
         if (gridParent != null)
         {
             for (int i = gridParent.childCount - 1; i >= 0; i--)
-            {
                 DestroyImmediate(gridParent.GetChild(i).gameObject);
-            }
         }
 
         // Generate grid without initial matches
@@ -79,35 +159,60 @@ public class Match3Manager : MonoBehaviour
         {
             for (int col = 0; col < columns; col++)
             {
-                CreateTileAt(row, col, GetRandomTileType(row, col));
+                Vector3 pos = GridToWorld(row, col);
+
+                // 1) Per-cell background plate (behind gems, above scenic background)
+                if (tileBackgroundPrefab)
+                {
+                    GameObject plate = Instantiate(tileBackgroundPrefab, pos, Quaternion.identity, backgroundParent);
+                    plate.transform.localScale = Vector3.one * plateScale;
+
+                    var bsr = plate.GetComponent<SpriteRenderer>();
+                    if (bsr)
+                    {
+                        bsr.sortingLayerName = gameplaySortingLayer; // e.g., "gameplay"
+                        bsr.sortingOrder     = bgOrderInLayer;       // 0
+                    }
+                }
+
+                // 2) Gem
+                CreateTileAt(row, col, GetRandomTileType(row, col), pos);
             }
         }
 
-        // Check for initial matches and regenerate if needed
+        // Re-roll any initial matches
         while (HasMatches())
         {
             for (int row = 0; row < rows; row++)
+            for (int col = 0; col < columns; col++)
             {
-                for (int col = 0; col < columns; col++)
+                if (IsPartOfMatch(row, col))
                 {
-                    if (IsPartOfMatch(row, col))
-                    {
-                        grid[row, col].SetTileType(GetRandomTileType(row, col),
-                            tileSprites[grid[row, col].tileType]);
-                    }
+                    int t = GetRandomTileType(row, col);
+                    grid[row, col].SetTileType(t, tileSprites[t]);
                 }
             }
         }
     }
 
-    void CreateTileAt(int row, int col, int tileType)
+    void CreateTileAt(int row, int col, int tileType) =>
+        CreateTileAt(row, col, tileType, GridToWorld(row, col));
+
+    void CreateTileAt(int row, int col, int tileType, Vector3 position)
     {
-        Vector3 position = new Vector3(col * tileSpacing, -row * tileSpacing, 0);
         GameObject tileObj = Instantiate(tilePrefab, position, Quaternion.identity, gridParent);
+        tileObj.transform.localScale = Vector3.one * gemScale;
+
+        // Ensure sorting for gems
+        var sr = tileObj.GetComponent<SpriteRenderer>();
+        if (sr)
+        {
+            sr.sortingLayerName = gameplaySortingLayer; // e.g., "gameplay"
+            sr.sortingOrder     = gemOrderInLayer;      // e.g., 10
+        }
 
         Tile tile = tileObj.GetComponent<Tile>();
-        if (tile == null)
-            tile = tileObj.AddComponent<Tile>();
+        if (tile == null) tile = tileObj.AddComponent<Tile>();
 
         tile.SetGridPosition(row, col);
         tile.SetTileType(tileType, tileSprites[tileType]);
@@ -119,64 +224,49 @@ public class Match3Manager : MonoBehaviour
     int GetRandomTileType(int row, int col)
     {
         List<int> validTypes = new List<int>();
+        for (int i = 0; i < tileTypeCount; i++) validTypes.Add(i);
 
-        for (int i = 0; i < tileTypeCount; i++)
+        // Prevent immediate horizontal match
+        if (col >= 2 && grid[row, col - 1] != null && grid[row, col - 2] != null)
         {
-            validTypes.Add(i);
+            if (grid[row, col - 1].tileType == grid[row, col - 2].tileType)
+                validTypes.Remove(grid[row, col - 1].tileType);
         }
 
-        // Remove types that would create horizontal matches
-        if (col >= 2)
+        // Prevent immediate vertical match
+        if (row >= 2 && grid[row - 1, col] != null && grid[row - 2, col] != null)
         {
-            if (grid[row, col - 1] != null && grid[row, col - 2] != null)
-            {
-                if (grid[row, col - 1].tileType == grid[row, col - 2].tileType)
-                {
-                    validTypes.Remove(grid[row, col - 1].tileType);
-                }
-            }
-        }
-
-        // Remove types that would create vertical matches
-        if (row >= 2)
-        {
-            if (grid[row - 1, col] != null && grid[row - 2, col] != null)
-            {
-                if (grid[row - 1, col].tileType == grid[row - 2, col].tileType)
-                {
-                    validTypes.Remove(grid[row - 1, col].tileType);
-                }
-            }
+            if (grid[row - 1, col].tileType == grid[row - 2, col].tileType)
+                validTypes.Remove(grid[row - 1, col].tileType);
         }
 
         return validTypes[Random.Range(0, validTypes.Count)];
     }
 
+    // --------------------------------------------------
+    // Input & swap (unchanged logic except positions use GridToWorld)
+    // --------------------------------------------------
     public void OnTileClicked(Tile clickedTile)
     {
         if (isProcessing) return;
 
         if (selectedTile == null)
         {
-            // First tile selection
             selectedTile = clickedTile;
             HighlightTile(selectedTile, true);
         }
         else if (selectedTile == clickedTile)
         {
-            // Deselect current tile
             HighlightTile(selectedTile, false);
             selectedTile = null;
         }
         else if (AreAdjacent(selectedTile, clickedTile))
         {
-            // Valid swap
             targetTile = clickedTile;
             StartCoroutine(SwapTiles(selectedTile, targetTile));
         }
         else
         {
-            // Select new tile
             HighlightTile(selectedTile, false);
             selectedTile = clickedTile;
             HighlightTile(selectedTile, true);
@@ -186,37 +276,27 @@ public class Match3Manager : MonoBehaviour
     void HighlightTile(Tile tile, bool highlight)
     {
         if (tile != null && tile.spriteRenderer != null)
-        {
             tile.spriteRenderer.color = highlight ? Color.yellow : Color.white;
-        }
     }
 
     bool AreAdjacent(Tile tile1, Tile tile2)
     {
         int rowDiff = Mathf.Abs(tile1.row - tile2.row);
         int colDiff = Mathf.Abs(tile1.column - tile2.column);
-
         return (rowDiff == 1 && colDiff == 0) || (rowDiff == 0 && colDiff == 1);
     }
 
-    // Mobile-friendly method for direct tile swapping
     public bool TrySwapTiles(Tile tile1, Tile tile2)
     {
         if (isProcessing) return false;
         if (tile1 == null || tile2 == null) return false;
         if (!AreAdjacent(tile1, tile2)) return false;
 
-        // Clear any previous selection
-        if (selectedTile != null)
-        {
-            HighlightTile(selectedTile, false);
-        }
+        if (selectedTile != null) HighlightTile(selectedTile, false);
 
-        // Perform the swap
         selectedTile = tile1;
-        targetTile = tile2;
+        targetTile   = tile2;
         StartCoroutine(SwapTiles(tile1, tile2));
-
         return true;
     }
 
@@ -224,9 +304,6 @@ public class Match3Manager : MonoBehaviour
     {
         isProcessing = true;
         HighlightTile(selectedTile, false);
-
-        // Play swap sound
-        Debug.Log("Tile swap!");
 
         // Swap positions in grid array
         grid[tile1.row, tile1.column] = tile2;
@@ -238,31 +315,22 @@ public class Match3Manager : MonoBehaviour
         tile1.SetGridPosition(tile2.row, tile2.column);
         tile2.SetGridPosition(tempRow, tempCol);
 
-        // Animate swap
-        Vector3 tile1Target = new Vector3(tile1.column * tileSpacing, -tile1.row * tileSpacing, 0);
-        Vector3 tile2Target = new Vector3(tile2.column * tileSpacing, -tile2.row * tileSpacing, 0);
+        // Animate swap using world positions from our centered layout
+        Vector3 tile1Target = GridToWorld(tile1.row, tile1.column);
+        Vector3 tile2Target = GridToWorld(tile2.row, tile2.column);
 
         tile1.MoveTo(tile1Target);
         tile2.MoveTo(tile2Target);
 
-        // Wait for animation to complete
         yield return new WaitUntil(() => !tile1.IsMoving && !tile2.IsMoving);
 
-        // Check for matches
-        bool hasMatches = HasMatches();
-
-        if (hasMatches)
+        if (HasMatches())
         {
-            // Valid move - notify about move and process matches
-            Debug.Log("Valid move made!");
-
             yield return StartCoroutine(ProcessMatches());
         }
         else
         {
-            // Invalid move - play sound and swap back
-            Debug.Log("Invalid move!");
-
+            // Invalid move; swap back
             grid[tile1.row, tile1.column] = tile2;
             grid[tile2.row, tile2.column] = tile1;
 
@@ -271,8 +339,8 @@ public class Match3Manager : MonoBehaviour
             tile1.SetGridPosition(tile2.row, tile2.column);
             tile2.SetGridPosition(tempRow2, tempCol2);
 
-            tile1Target = new Vector3(tile1.column * tileSpacing, -tile1.row * tileSpacing, 0);
-            tile2Target = new Vector3(tile2.column * tileSpacing, -tile2.row * tileSpacing, 0);
+            tile1Target = GridToWorld(tile1.row, tile1.column);
+            tile2Target = GridToWorld(tile2.row, tile2.column);
 
             tile1.MoveTo(tile1Target);
             tile2.MoveTo(tile2Target);
@@ -285,133 +353,73 @@ public class Match3Manager : MonoBehaviour
         isProcessing = false;
     }
 
+    // --------------------------------------------------
+    // Match / resolve (unchanged logic; positions come from GridToWorld)
+    // --------------------------------------------------
     bool HasMatches()
     {
         for (int row = 0; row < rows; row++)
-        {
-            for (int col = 0; col < columns; col++)
-            {
-                if (IsPartOfMatch(row, col))
-                    return true;
-            }
-        }
+        for (int col = 0; col < columns; col++)
+            if (IsPartOfMatch(row, col)) return true;
         return false;
     }
 
     bool IsPartOfMatch(int row, int col)
     {
         if (grid[row, col] == null) return false;
-
         int tileType = grid[row, col].tileType;
 
-        // Check horizontal match
         int horizontalCount = 1;
-
-        // Count left
-        for (int i = col - 1; i >= 0; i--)
-        {
-            if (grid[row, i] != null && grid[row, i].tileType == tileType)
-                horizontalCount++;
-            else
-                break;
-        }
-
-        // Count right
-        for (int i = col + 1; i < columns; i++)
-        {
-            if (grid[row, i] != null && grid[row, i].tileType == tileType)
-                horizontalCount++;
-            else
-                break;
-        }
-
+        for (int i = col - 1; i >= 0; i--) { if (grid[row, i] != null && grid[row, i].tileType == tileType) horizontalCount++; else break; }
+        for (int i = col + 1; i < columns; i++) { if (grid[row, i] != null && grid[row, i].tileType == tileType) horizontalCount++; else break; }
         if (horizontalCount >= 3) return true;
 
-        // Check vertical match
         int verticalCount = 1;
-
-        // Count up
-        for (int i = row - 1; i >= 0; i--)
-        {
-            if (grid[i, col] != null && grid[i, col].tileType == tileType)
-                verticalCount++;
-            else
-                break;
-        }
-
-        // Count down
-        for (int i = row + 1; i < rows; i++)
-        {
-            if (grid[i, col] != null && grid[i, col].tileType == tileType)
-                verticalCount++;
-            else
-                break;
-        }
-
+        for (int i = row - 1; i >= 0; i--) { if (grid[i, col] != null && grid[i, col].tileType == tileType) verticalCount++; else break; }
+        for (int i = row + 1; i < rows; i++) { if (grid[i, col] != null && grid[i, col].tileType == tileType) verticalCount++; else break; }
         return verticalCount >= 3;
     }
 
     IEnumerator ProcessMatches()
     {
         bool foundMatches;
-
         do
         {
             foundMatches = false;
             List<Tile> tilesToRemove = new List<Tile>();
 
-            // Find all matching tiles
             for (int row = 0; row < rows; row++)
+            for (int col = 0; col < columns; col++)
             {
-                for (int col = 0; col < columns; col++)
+                if (IsPartOfMatch(row, col))
                 {
-                    if (IsPartOfMatch(row, col))
-                    {
-                        tilesToRemove.Add(grid[row, col]);
-                        foundMatches = true;
-                    }
+                    tilesToRemove.Add(grid[row, col]);
+                    foundMatches = true;
                 }
             }
 
             if (foundMatches)
             {
-                // Remove matched tiles
                 foreach (Tile tile in tilesToRemove)
                 {
                     AddScore(10 * comboMultiplier);
-
-                    // Play effects
-                    Vector3 effectPos = tile.transform.position;
-                    Color tileColor = tile.spriteRenderer != null ? tile.spriteRenderer.color : Color.white;
-
                     grid[tile.row, tile.column] = null;
                     tile.gameObject.SetActive(false);
                 }
 
-                // Play match sound
-                if (comboMultiplier > 1)
-                    Debug.Log("Combo sound!");
-                else
-                    Debug.Log("Match sound!");
-
                 comboMultiplier++;
-
-                // Apply gravity
                 yield return StartCoroutine(ApplyGravity());
-
-                // Fill empty spaces
                 yield return StartCoroutine(FillEmptySpaces());
             }
 
         } while (foundMatches);
 
-        comboMultiplier = 1; // Reset combo multiplier
+        comboMultiplier = 1;
     }
 
     IEnumerator ApplyGravity()
     {
         bool moved = true;
-
         while (moved)
         {
             moved = false;
@@ -422,17 +430,15 @@ public class Match3Manager : MonoBehaviour
                 {
                     if (grid[row, col] == null)
                     {
-                        // Find tile above to fall down
                         for (int aboveRow = row - 1; aboveRow >= 0; aboveRow--)
                         {
                             if (grid[aboveRow, col] != null)
                             {
-                                // Move tile down
                                 grid[row, col] = grid[aboveRow, col];
                                 grid[aboveRow, col] = null;
 
                                 grid[row, col].SetGridPosition(row, col);
-                                Vector3 newPosition = new Vector3(col * tileSpacing, -row * tileSpacing, 0);
+                                Vector3 newPosition = GridToWorld(row, col);
                                 grid[row, col].MoveTo(newPosition);
 
                                 moved = true;
@@ -443,17 +449,11 @@ public class Match3Manager : MonoBehaviour
                 }
             }
 
-            // Wait for all tiles to finish moving
             yield return new WaitUntil(() =>
             {
-                for (int row = 0; row < rows; row++)
-                {
-                    for (int col = 0; col < columns; col++)
-                    {
-                        if (grid[row, col] != null && grid[row, col].IsMoving)
-                            return false;
-                    }
-                }
+                for (int r = 0; r < rows; r++)
+                for (int c = 0; c < columns; c++)
+                    if (grid[r, c] != null && grid[r, c].IsMoving) return false;
                 return true;
             });
         }
@@ -467,19 +467,25 @@ public class Match3Manager : MonoBehaviour
             {
                 if (grid[row, col] == null)
                 {
-                    // Create new tile above the grid and let it fall
                     int tileType = Random.Range(0, tileTypeCount);
-                    Vector3 startPosition = new Vector3(col * tileSpacing, rows * tileSpacing, 0);
+                    Vector3 startPosition = GridToWorld(-1, col); // one cell above
+                    Vector3 targetPosition = GridToWorld(row, col);
 
                     GameObject tileObj = Instantiate(tilePrefab, startPosition, Quaternion.identity, gridParent);
+                    tileObj.transform.localScale = Vector3.one * gemScale;
+
+                    var sr = tileObj.GetComponent<SpriteRenderer>();
+                    if (sr)
+                    {
+                        sr.sortingLayerName = gameplaySortingLayer;
+                        sr.sortingOrder     = gemOrderInLayer;
+                    }
+
                     Tile tile = tileObj.GetComponent<Tile>();
-                    if (tile == null)
-                        tile = tileObj.AddComponent<Tile>();
+                    if (tile == null) tile = tileObj.AddComponent<Tile>();
 
                     tile.SetGridPosition(row, col);
                     tile.SetTileType(tileType, tileSprites[tileType]);
-
-                    Vector3 targetPosition = new Vector3(col * tileSpacing, -row * tileSpacing, 0);
                     tile.MoveTo(targetPosition);
 
                     grid[row, col] = tile;
@@ -487,17 +493,11 @@ public class Match3Manager : MonoBehaviour
             }
         }
 
-        // Wait for all new tiles to finish falling
         yield return new WaitUntil(() =>
         {
-            for (int row = 0; row < rows; row++)
-            {
-                for (int col = 0; col < columns; col++)
-                {
-                    if (grid[row, col] != null && grid[row, col].IsMoving)
-                        return false;
-                }
-            }
+            for (int r = 0; r < rows; r++)
+            for (int c = 0; c < columns; c++)
+                if (grid[r, c] != null && grid[r, c].IsMoving) return false;
             return true;
         });
     }
@@ -508,14 +508,12 @@ public class Match3Manager : MonoBehaviour
         Debug.Log($"Score: {score}");
     }
 
-    // Helper method to get hint for player
     public bool HasPossibleMoves()
     {
         for (int row = 0; row < rows; row++)
         {
             for (int col = 0; col < columns; col++)
             {
-                // Check all adjacent tiles
                 int[] dRow = { -1, 1, 0, 0 };
                 int[] dCol = { 0, 0, -1, 1 };
 
@@ -526,16 +524,10 @@ public class Match3Manager : MonoBehaviour
 
                     if (IsValidPosition(newRow, newCol))
                     {
-                        // Simulate swap
                         SwapTilesInGrid(row, col, newRow, newCol);
-
                         bool wouldMatch = IsPartOfMatch(row, col) || IsPartOfMatch(newRow, newCol);
-
-                        // Swap back
                         SwapTilesInGrid(row, col, newRow, newCol);
-
-                        if (wouldMatch)
-                            return true;
+                        if (wouldMatch) return true;
                     }
                 }
             }
@@ -549,10 +541,8 @@ public class Match3Manager : MonoBehaviour
         grid[row1, col1] = grid[row2, col2];
         grid[row2, col2] = temp;
 
-        if (grid[row1, col1] != null)
-            grid[row1, col1].SetGridPosition(row1, col1);
-        if (grid[row2, col2] != null)
-            grid[row2, col2].SetGridPosition(row2, col2);
+        if (grid[row1, col1] != null) grid[row1, col1].SetGridPosition(row1, col1);
+        if (grid[row2, col2] != null) grid[row2, col2].SetGridPosition(row2, col2);
     }
 
     bool IsValidPosition(int row, int col)

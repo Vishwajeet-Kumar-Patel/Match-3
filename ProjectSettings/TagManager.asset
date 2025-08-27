@@ -44,6 +44,9 @@ TagManager:
   - name: Background
     uniqueID: 4208979523
     locked: 0
+  - name: gameplay
+    uniqueID: 3700538565
+    locked: 0
   - name: App bars
     uniqueID: 924122499
     locked: 0
@@ -52,9 +55,6 @@ TagManager:
     locked: 0
   - name: text
     uniqueID: 407235163
-    locked: 0
-  - name: gameplay
-    uniqueID: 3700538565
     locked: 0
   m_RenderingLayers:
   - Default
